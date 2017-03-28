@@ -1,5 +1,5 @@
 /* 
- 1. 驱动框架、填充、完善
+ 1. 驱动框架、填充
  2. 看原理图 
     EINT0  - GPF0 
 	EINT2  - GPF2 
@@ -16,6 +16,7 @@
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/delay.h>
+#include <linux/irq.h>
 #include <asm/irq.h>
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -32,16 +33,20 @@ volatile unsigned long *gpfdat = NULL;
 volatile unsigned long *gpgcon = NULL;
 volatile unsigned long *gpgdat = NULL;
 
+static irqreturn_t buttons_irq(int irq,void *dev_id)
+{
 
-
+	printk("-- buttons_irq --\n");
+	return IRQ_HANDLED;
+}
 
 
 static int button_drv_open(struct inode *inode, struct file *file)
 {
-	/* GPF0 GPF2清零 */
-	*gpfcon &= ~((0x3<<(0*2))|(0x3<<(2*2)));
-	/* GPG3、GPG11清零 */
-	*gpgcon &= ~((0x3<<(3*2)) | (0x3<<(11*2)));
+	request_irq(IRQ_EINT0, buttons_irq,IRQT_BOTHEDGE,"S2",1);
+	request_irq(IRQ_EINT2, buttons_irq,IRQT_BOTHEDGE,"S3",1);
+	request_irq(IRQ_EINT11,buttons_irq,IRQT_BOTHEDGE,"S4",1);
+	request_irq(IRQ_EINT19,buttons_irq,IRQT_BOTHEDGE,"S5",1);
 	printk("-- button drv open --\n");
 	return 0;
 }
@@ -73,12 +78,21 @@ static ssize_t button_drv_write(struct file *file,const char __user *buf,size_t 
 {
 	return 0;
 }
+int button_drv_close(struct inode *inode,struct file *file)
+{
+	free_irq(IRQ_EINT0,1);
+	free_irq(IRQ_EINT2,1);
+	free_irq(IRQ_EINT11,1);
+	free_irq(IRQ_EINT19,1);
+	return 0;
+}
 
 static struct file_operations button_drv_fops = {
 	.owner = THIS_MODULE,
 	.open  = button_drv_open,
 	.read  = button_drv_read,
 	.write = button_drv_write,  
+	.release = button_drv_close,
 };
 
 
@@ -92,7 +106,7 @@ static int __init button_drv_init(void)
 		printk("-- register fail --\n");
 		return 0;
 	}
-	/* 自动创建设备节 */
+	/* 自动创建设备节点 */
 	button_class = class_create(THIS_MODULE,DEVICE_NAME);
 	button_class_dev = class_device_create(button_class,NULL,MKDEV(BUTTON_MAJOR,0),NULL,"button");
 	/* 物理地址转换成虚拟地址 */
