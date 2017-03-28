@@ -10,14 +10,22 @@
 #include <asm/hardware.h>
 
 #define FIRST_DRV_MAJOR		  0 
-#define FIRST_DRV_DEVICE_NAME "first_name"
+#define FIRST_DRV_DEVICE_NAME "led_drv"
 
 static int major; 
 static struct class *first_class;
 static struct class_device	*first_class_devs;
-
+volatile unsigned long *gpfcon = NULL;
+volatile unsigned long *gpfdat= NULL;
 static int first_drv_open(struct inode *inode, struct file *file)
 {
+	/*GPF4、5、6 清零*/
+	*gpfcon &= ~((0x3<<(4*2)) | (0x3<<(5*2))|(0x3<<(5*2)));	
+	/*设置为输出*/
+	*gpfcon |= ((0x1<<(4*2)) | (0x1<<(5*2))|(0x1<<(5*2)));		
+
+
+
 	printk("--(%s(%d)--<%s) \n",__FILE__,__LINE__,__FUNCTION__);
 	return 0;
 }
@@ -30,6 +38,18 @@ static int first_drv_read(struct file *filp, char __user *buff, size_t count, lo
 
 static ssize_t first_drv_write(struct file *file, const char __user *buf, size_t count, loff_t * ppos)
 {	
+	int val;
+	copy_from_user(&val,buf,count);//用户空间到内核空间
+	if(!val)
+	{
+		//点亮LED
+		*gpfdat &= ~((1<<4)|(1<<5)|(1<<6));
+	}
+	else
+	{
+		//灭灯
+		*gpfdat |= (1<<4)|(1<<5)|(1<<6);
+	}
 	printk("-- (%s(%d)--<%s) \n",__FILE__,__LINE__,__FUNCTION__);
 	return 0;
 }
@@ -58,10 +78,13 @@ static int __init first_drv_init(void)
 	 */
 	major = register_chrdev(FIRST_DRV_MAJOR, FIRST_DRV_DEVICE_NAME, &first_drv_fops);	
 	printk("--  (%s(%d)--<%s) major = %d \n\n",__FILE__,__LINE__,__FUNCTION__,major);
-	
-	
 	first_class = class_create(THIS_MODULE, FIRST_DRV_DEVICE_NAME);
     first_class_devs = class_device_create(first_class, NULL, MKDEV(major, 0), NULL, "xyz");	
+	/*物理地址映射成虚拟地址*/
+	gpfcon = (volatile unsigned long *)ioremap(0x56000050,16);
+	gpfdat  = gpfcon + 1;
+
+	return 0;
 }
 
 
@@ -75,6 +98,7 @@ static void __exit first_drv_exit(void)
 	printk("--  (%s(%d)--<%s) \n",__FILE__,__LINE__,__FUNCTION__);
 	class_device_unregister(first_class_devs);
 	class_destroy(first_class);
+	iounmap(gpfcon);
 }
 
 module_init(first_drv_init);
