@@ -9,7 +9,7 @@
 #include <asm/arch/regs-gpio.h>
 #include <asm/hardware.h>
 
-#define FIRST_DRV_MAJOR		  111
+#define FIRST_DRV_MAJOR		  0 
 #define FIRST_DRV_DEVICE_NAME "first_name"
 
 static int major; 
@@ -57,7 +57,11 @@ static int __init first_drv_init(void)
 	 * 这样，主设备号就和具体的file_operations结构联系起来了，
 	 */
 	major = register_chrdev(FIRST_DRV_MAJOR, FIRST_DRV_DEVICE_NAME, &first_drv_fops);	
-	printk("--  (%s(%d)--<%s) major = %d \n\n",__FILE__,__LINE__,__FUNCTION__,major);	
+	printk("--  (%s(%d)--<%s) major = %d \n\n",__FILE__,__LINE__,__FUNCTION__,major);
+	
+	
+	first_class = class_create(THIS_MODULE, FIRST_DRV_DEVICE_NAME);
+    first_class_devs = class_device_create(first_class, NULL, MKDEV(major, 0), NULL, "xyz");	
 }
 
 
@@ -69,6 +73,8 @@ static void __exit first_drv_exit(void)
     /* 卸载驱动程序 */
     unregister_chrdev(major, FIRST_DRV_DEVICE_NAME);
 	printk("--  (%s(%d)--<%s) \n",__FILE__,__LINE__,__FUNCTION__);
+	class_device_unregister(first_class_devs);
+	class_destroy(first_class);
 }
 
 module_init(first_drv_init);
