@@ -3,34 +3,45 @@
 #include <fcntl.h>
 #include <stdio.h>
 
-/* 
-*
-*/
+void print_usage(char *file)
+{
+	printf("Usage:\n");
+	printf("%s <dev> <on | off>\n",file);
+}
+
 int main(int argc, char **argv)
 {
 	int fd;
-	int val = 1;
-	fd = open("/dev/xyz",O_RDWR);
+	char val;
+	char *filename;
+	if(argc != 3)
+	{
+		print_usage(argv[0]);
+		return 0;
+	}
+	filename = argv[1];
+	fd = open(filename,O_RDWR);
 	if(fd < 0)
 	{
 		printf("-- open fail (%s(%d)--<%s) \n",__FILE__,__LINE__,__FUNCTION__);
 	}
-	if(argc != 2)
+	if(!strcmp(argv[2],"on"))
 	{
-		printf("Usage :");
-		// <> 尖括号表示不可省略
-		printf("%s <on|off>\n",argv[0]);
-		return 0;
+		//亮灯
+		val = 0;
+		write(fd,&val,1);	
 	}
-	if(strcmp(argv[1],"on") == 0)
+	else if(!strcmp(argv[2],"off"))
 	{
-		val = 0;	
+		//灭灯
+		val = 1;
+		write(fd,&val,1);		
 	}
 	else
 	{
-		val = 1;	
+		print_usage(argv[0]);
 	}
-	write(fd,&val,4);
+	return 0;
 }
 
 
