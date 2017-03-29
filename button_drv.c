@@ -22,6 +22,8 @@
 #include <asm/io.h>
 #include <asm/arch/regs-gpio.h>
 #include <asm/hardware.h>
+#include <linux/poll.h>
+
 
 #define DEVICE_NAME  "button_drv"
 #define BUTTON_MAJOR  221
@@ -109,6 +111,17 @@ static ssize_t button_drv_write(struct file *file,const char __user *buf,size_t 
 {
 	return 0;
 }
+
+static unsigned button_drv_poll(struct file *file, poll_table *wait)
+{
+	unsigned int mask = 0;
+	poll_wait(file, &button_waitq, wait); // ≤ªª·¡¢º¥–›√ﬂ
+
+	if (ev_press)
+		mask |= POLLIN | POLLRDNORM;
+
+	return mask;
+}
 int button_drv_close(struct inode *inode,struct file *file)
 {
 	free_irq(IRQ_EINT0, &pins_desc[0]);
@@ -124,6 +137,7 @@ static struct file_operations button_drv_fops = {
 	.read  = button_drv_read,
 	.write = button_drv_write,  
 	.release = button_drv_close,
+	.poll    = button_drv_poll,
 };
 
 
