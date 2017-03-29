@@ -1,11 +1,11 @@
 /* 
- 1. é©±åŠ¨æ¡†æž¶ã€å¡«å……
- 2. çœ‹åŽŸç†å›¾ 
+ 1. Çý¶¯¿ò¼Ü¡¢Ìî³ä
+ 2. ¿´Ô­ÀíÍ¼ 
     EINT0  - GPF0 
 	EINT2  - GPF2 
 	EINT11 - GPG3
 	EINT19 - GPG11 
-  3. æŸ¥çœ‹æ•°æ®æ‰‹å†Œ
+  3. ²é¿´Êý¾ÝÊÖ²á
   	GPFCON 0x56000050
 	GPFDAT 0x56000054 
 	GPGCON 0x56000060
@@ -26,6 +26,18 @@
 #define DEVICE_NAME  "button_drv"
 #define BUTTON_MAJOR  221
 
+
+/* µÈ´ý¶ÓÁÐ:
+ * µ±Ã»ÓÐ°´¼ü±»°´ÏÂÊ±£¬Èç¹ûÓÐ½ø³Ìµ÷ÓÃs3c24xx_buttons_readº¯Êý£¬
+ * Ëü½«ÐÝÃß
+ */
+static DECLARE_WAIT_QUEUE_HEAD(button_waitq);
+
+/* ÖÐ¶ÏÊÂ¼þ±êÖ¾, ÖÐ¶Ï·þÎñ³ÌÐò½«ËüÖÃ1£¬s3c24xx_buttons_read½«ËüÇå0 */
+
+static volatile int ev_press = 0;
+
+
 static struct class *button_class;
 static struct class_device *button_class_dev;
 volatile unsigned long *gpfcon = NULL;
@@ -33,9 +45,38 @@ volatile unsigned long *gpfdat = NULL;
 volatile unsigned long *gpgcon = NULL;
 volatile unsigned long *gpgdat = NULL;
 
+struct pin_desc{
+	unsigned int pin;
+	unsigned int key_val;
+};
+
+/*¼üÖµ £º °´ÏÂÊ±£¬0x01 0x02 0x03 0x04*/
+/*¼üÖµ £º ËÉ¿ªÊ±£¬0x81 0x82 0x83 0x84*/
+static unsigned char key_val;
+struct pin_desc pins_desc[4] = {
+	{S3C2410_GPF0,  0x01},
+	{S3C2410_GPF2,  0x02},
+	{S3C2410_GPG3,  0x03},
+	{S3C2410_GPG11, 0x04},
+};
+
 static irqreturn_t buttons_irq(int irq,void *dev_id)
 {
-
+	struct pin_desc *pindesc = (struct pin_desc *)dev_id;
+	unsigned int pinval;
+	pinval = s3c2410_gpio_getpin(pindesc->pin);
+	if(pinval)
+	{
+		/*ËÉ¿ª*/
+		key_val = 0x80 | pindesc->key_val;
+	}
+	else
+	{
+		/*°´ÏÂ*/
+		key_val = pindesc->key_val;
+	}
+	ev_press = 1;                			/* ±íÊ¾ÖÐ¶Ï·¢ÉúÁË */
+	wake_up_interruptible(&button_waitq);   /* »½ÐÑÐÝÃßµÄ½ø³Ì */
 	printk("-- buttons_irq --\n");
 	return IRQ_HANDLED;
 }
@@ -43,36 +84,26 @@ static irqreturn_t buttons_irq(int irq,void *dev_id)
 
 static int button_drv_open(struct inode *inode, struct file *file)
 {
-	request_irq(IRQ_EINT0, buttons_irq,IRQT_BOTHEDGE,"S2",1);
-	request_irq(IRQ_EINT2, buttons_irq,IRQT_BOTHEDGE,"S3",1);
-	request_irq(IRQ_EINT11,buttons_irq,IRQT_BOTHEDGE,"S4",1);
-	request_irq(IRQ_EINT19,buttons_irq,IRQT_BOTHEDGE,"S5",1);
+	request_irq(IRQ_EINT0, buttons_irq,IRQT_BOTHEDGE,"S2",&pins_desc[0]);
+	request_irq(IRQ_EINT2, buttons_irq,IRQT_BOTHEDGE,"S3",&pins_desc[1]);
+	request_irq(IRQ_EINT11,buttons_irq,IRQT_BOTHEDGE,"S4",&pins_desc[2]);
+	request_irq(IRQ_EINT19,buttons_irq,IRQT_BOTHEDGE,"S5",&pins_desc[3]);
 	printk("-- button drv open --\n");
 	return 0;
 }
 
 static int button_drv_read(struct file *filp, char __user *buff, size_t count, loff_t *offp)
 {
-	/* è¿”å›žå››ä¸ªå¼•è„šçš„ç”µå¹³*/
-	unsigned char key_value[4];
-	int regval;
-	if(count != sizeof(key_value))
+	if(count != 1)
 	{
 		return -EINVAL;
 	}
-
-	/* è¯»GPF0 2 */
-	regval = *gpfdat;
-	key_value[0] = (regval & (1<<0)) ? 1 : 0;
-	key_value[1] = (regval & (1<<2)) ? 1 : 0;
-
-	/* è¯»GPG3 11 */
-	regval = *gpgdat;
-	key_value[2] = (regval & (1<<3))  ? 1 : 0;
-	key_value[3] = (regval & (1<<11)) ? 1 : 0;
-
-	copy_to_user(buff,key_value,sizeof(key_value));	//å†…æ ¸ç©ºé—´åˆ°ç”¨æˆ·ç©ºé—´
-	return sizeof(key_value);
+	/* Èç¹û°´¼üÃ»ÓÐ¶¯×÷£¬ÔòÐÝÃß*/
+	wait_event_interruptible(button_waitq,ev_press);
+	/*ÓÐ°´¼ü¶¯×÷£¬·µ»Ø¼üÖµ*/
+	copy_to_user(buff,&key_val,1);
+	ev_press = 0;
+	return 1;
 }
 static ssize_t button_drv_write(struct file *file,const char __user *buf,size_t count,loff_t * ppos)
 {
@@ -80,10 +111,10 @@ static ssize_t button_drv_write(struct file *file,const char __user *buf,size_t 
 }
 int button_drv_close(struct inode *inode,struct file *file)
 {
-	free_irq(IRQ_EINT0,1);
-	free_irq(IRQ_EINT2,1);
-	free_irq(IRQ_EINT11,1);
-	free_irq(IRQ_EINT19,1);
+	free_irq(IRQ_EINT0, &pins_desc[0]);
+	free_irq(IRQ_EINT2, &pins_desc[1]);
+	free_irq(IRQ_EINT11,&pins_desc[2]);
+	free_irq(IRQ_EINT19,&pins_desc[3]);
 	return 0;
 }
 
@@ -99,17 +130,17 @@ static struct file_operations button_drv_fops = {
 static int __init button_drv_init(void)
 {
 	int ret = 0;
-	//æ³¨å†Œé©±åŠ¨ç¨‹åº
+	//×¢²áÇý¶¯³ÌÐò
 	ret = register_chrdev(BUTTON_MAJOR,DEVICE_NAME,&button_drv_fops);	
 	if(ret < 0)
 	{
 		printk("-- register fail --\n");
 		return 0;
 	}
-	/* è‡ªåŠ¨åˆ›å»ºè®¾å¤‡èŠ‚ç‚¹ */
+	/* ×Ô¶¯´´½¨Éè±¸½Úµã */
 	button_class = class_create(THIS_MODULE,DEVICE_NAME);
 	button_class_dev = class_device_create(button_class,NULL,MKDEV(BUTTON_MAJOR,0),NULL,"button");
-	/* ç‰©ç†åœ°å€è½¬æ¢æˆè™šæ‹Ÿåœ°å€ */
+	/* ÎïÀíµØÖ·×ª»»³ÉÐéÄâµØÖ· */
 	gpfcon = (volatile unsigned long *)ioremap(0x56000050,16);
 	gpfdat = gpfcon + 1;
 	gpgcon = (volatile unsigned long *)ioremap(0x56000060,16);
