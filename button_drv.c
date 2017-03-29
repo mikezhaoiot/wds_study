@@ -46,7 +46,7 @@ volatile unsigned long *gpfcon = NULL;
 volatile unsigned long *gpfdat = NULL;
 volatile unsigned long *gpgcon = NULL;
 volatile unsigned long *gpgdat = NULL;
-
+static struct fasync_struct *button_async;
 struct pin_desc{
 	unsigned int pin;
 	unsigned int key_val;
@@ -79,6 +79,8 @@ static irqreturn_t buttons_irq(int irq,void *dev_id)
 	}
 	ev_press = 1;                			/* 表示中断发生了 */
 	wake_up_interruptible(&button_waitq);   /* 唤醒休眠的进程 */
+	/* 发送 */
+	kill_fasync (&button_async, SIGIO, POLL_IN);
 	printk("-- buttons_irq --\n");
 	return IRQ_HANDLED;
 }
@@ -122,6 +124,14 @@ static unsigned button_drv_poll(struct file *file, poll_table *wait)
 
 	return mask;
 }
+static int button_drv_fasync(int fd,struct file *filp,int on)
+{
+	printk("driver: button_drv_fasync\n");
+	return fasync_helper(fd,filp,on,&button_async);
+
+
+
+}
 int button_drv_close(struct inode *inode,struct file *file)
 {
 	free_irq(IRQ_EINT0, &pins_desc[0]);
@@ -132,12 +142,14 @@ int button_drv_close(struct inode *inode,struct file *file)
 }
 
 static struct file_operations button_drv_fops = {
-	.owner = THIS_MODULE,
-	.open  = button_drv_open,
-	.read  = button_drv_read,
-	.write = button_drv_write,  
+	.owner 	 = THIS_MODULE,
+	.open  	 = button_drv_open,
+	.read  	 = button_drv_read,
+	.write 	 = button_drv_write,  
 	.release = button_drv_close,
 	.poll    = button_drv_poll,
+	.fasync  = button_drv_fasync,
+	
 };
 
 
