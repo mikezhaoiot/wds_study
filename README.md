@@ -22,5 +22,10 @@
  - busybox-1.20.0 制作的文件系统
  - [源码][1]
 
+##　uImage_wm8976
+
+ - linux-3.4.2 打补丁`linux-3.4.2_alsa_wm8976_uda1341_jz2440_mini2440_tq2440.patch`
+ - cp config_jz2440 .config 配置jz2440，支持WM8976音频驱动
+ - 主要支持wm8976音频驱动
 
   [1]: https://github.com/wisezhao/wds_study/tree/FileSystem-jffs2
